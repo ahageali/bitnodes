@@ -9,3 +9,6 @@
 clean.sh
 geoip/*.dat
 rsync.sh
+.idea/
+cmake-build-debug/
+CMakeLists.txt
