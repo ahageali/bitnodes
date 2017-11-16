@@ -46,6 +46,7 @@ from binascii import hexlify, unhexlify
 from collections import Counter
 from ConfigParser import ConfigParser
 from ipaddress import ip_network
+from mongo import get_db
 
 from protocol import (
     ONION_PREFIX,
@@ -60,7 +61,7 @@ redis.connection.socket = gevent.socket
 
 REDIS_CONN = None
 CONF = {}
-
+MONGODB = None
 
 def enumerate_node(redis_pipe, addr_msgs, now):
     """
@@ -159,6 +160,7 @@ def dump(timestamp, nodes):
     returns most common height from the nodes.
     """
     json_data = []
+    mongo_data = []
 
     for node in nodes:
         (address, port, services) = node[5:].split("-", 2)
@@ -169,6 +171,12 @@ def dump(timestamp, nodes):
             logging.warning("%s missing", height_key)
             height = 0
         json_data.append([address, int(port), int(services), height])
+        mongo_data.append({
+          "address": address,
+          "port": int(port),
+          "services": int(services),
+          "height": height
+        })
 
     if len(json_data) == 0:
         logging.warning("len(json_data): %d", len(json_data))
@@ -177,6 +185,9 @@ def dump(timestamp, nodes):
     json_output = os.path.join(CONF['crawl_dir'], "{}.json".format(timestamp))
     open(json_output, 'w').write(json.dumps(json_data))
     logging.info("Wrote %s", json_output)
+
+    MONGODB['crawler'].insert_many(mongo_data)
+    logging.info("Wrote to DB")
 
     return Counter([node[-1] for node in json_data]).most_common(1)[0][0]
 
@@ -470,6 +481,9 @@ def main(argv):
 
     global REDIS_CONN
     REDIS_CONN = new_redis_conn(db=CONF['db'])
+
+    global MONGODB
+    MONGODB = get_db()
 
     if CONF['master']:
         REDIS_CONN.set('crawl:master:state', "starting")
