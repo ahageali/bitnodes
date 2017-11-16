@@ -1,2 +1,2 @@
 #!/bin/bash
-jobs -p | xargs kill
+ps x | grep -v 'grep' | grep 'python -u.*' | awk '{ print $1 }' | xargs kill -SIGTERM
