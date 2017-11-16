@@ -45,6 +45,7 @@ from base64 import b32decode
 from binascii import hexlify, unhexlify
 from collections import Counter
 from ConfigParser import ConfigParser
+from datetime import datetime
 from ipaddress import ip_network
 from mongo import get_db
 
@@ -175,7 +176,8 @@ def dump(timestamp, nodes):
           "address": address,
           "port": int(port),
           "services": int(services),
-          "height": height
+          "height": height,
+          "ts": datetime.fromtimestamp(timestamp)
         })
 
     if len(json_data) == 0:
