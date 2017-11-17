@@ -106,7 +106,7 @@ class Keepalive(object):
                 except socket.error as err:
                     logging.info("ping: Closing %s (%s)", self.node, err)
                     err_msg = get_node_msg('ping_err', self.node)
-                    err_msg['err'] = err
+                    err_msg['err'] = str(err)
                     mongo_msgs.append(err_msg)
                     break
 
@@ -116,7 +116,7 @@ class Keepalive(object):
                     logging.info(
                         "send_bestblockhash: Closing %s (%s)", self.node, err)
                     err_msg = get_node_msg('bestblockhash_err', self.node)
-                    err_msg['err'] = err
+                    err_msg['err'] = str(err)
                     mongo_msgs.append(err_msg)
                     break
 
@@ -125,7 +125,7 @@ class Keepalive(object):
                 except socket.error as err:
                     logging.info("send_addr: Closing %s (%s)", self.node, err)
                     err_msg = get_node_msg('send_addr_err', self.node)
-                    err_msg['err'] = err
+                    err_msg['err'] = str(err)
                     mongo_msgs.append(err_msg)
                     break
 
@@ -140,7 +140,7 @@ class Keepalive(object):
             except (ProtocolError, ConnectionError, socket.error) as err:
                 logging.info("get_messages: Closing %s (%s)", self.node, err)
                 err_msg = get_node_msg('get_messages_err', self.node)
-                err_msg['err'] = err
+                err_msg['err'] = str(err)
                 mongo_msgs.append(err_msg)
                 break
 
@@ -275,7 +275,7 @@ def task():
     except (ProtocolError, ConnectionError, socket.error) as err:
         logging.debug("Closing %s (%s)", node, err)
         err_msg = get_node_msg('connect_exception', node)
-        err_msg['err'] = err
+        err_msg['err'] = str(err)
         mongo_msgs.append(err_msg)
         MONGODB['ping'].insert_many(mongo_msgs)
         conn.close()
