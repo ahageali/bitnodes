@@ -64,7 +64,7 @@ REDIS_CONN = None
 CONF = {}
 MONGODB = None
 
-def enumerate_node(redis_pipe, addr_msgs, now):
+def enumerate_node(redis_pipe, addr_msgs, now, host_address, host_port):
     """
     Adds all peering nodes with max. age of 24 hours into the crawl set.
     """
@@ -96,8 +96,9 @@ def enumerate_node(redis_pipe, addr_msgs, now):
 
 
     mongo_data.append({
-        "address": address,
-        "nodes":nodes,
+        "address": host_address,
+        "port": host_port,
+        "nodes": nodes,
         "ts": now
     })
 
@@ -163,7 +164,7 @@ def connect(redis_conn, key):
         redis_pipe.setex(height_key, CONF['max_age'],
                          version_msg.get('height', 0))
         now = int(time.time())
-        peers = enumerate_node(redis_pipe, addr_msgs, now)
+        peers = enumerate_node(redis_pipe, addr_msgs, now, address, int(port))
         logging.debug("%s Peers: %d", conn.to_addr, peers)
         redis_pipe.hset(key, 'state', "up")
     redis_pipe.execute()
