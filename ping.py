@@ -290,9 +290,9 @@ def task():
         MONGODB['ping'].insert_many(mongo_msgs)
         return
 
-   handshake_mongo_msg = get_node_msg('handshake', node)
-   handshake_mongo_msg['handshake_msgs'] = handshake_msgs
-   mongo_msgs.append(handshake_mongo_msg)
+    handshake_mongo_msg = get_node_msg('handshake', node)
+    handshake_mongo_msg['handshake_msgs'] = handshake_msgs
+    mongo_msgs.append(handshake_mongo_msg)
 
     if address.endswith(".onion"):
         # Map local port to .onion node
