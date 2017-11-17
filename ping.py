@@ -45,7 +45,8 @@ import sys
 import time
 from binascii import hexlify, unhexlify
 from ConfigParser import ConfigParser
-
+from datetime import datetime
+from mongo import get_db
 from protocol import ProtocolError, ConnectionError, Connection
 from utils import new_redis_conn, get_keys, ip_to_network
 
@@ -53,7 +54,18 @@ redis.connection.socket = gevent.socket
 
 REDIS_CONN = None
 CONF = {}
+MONGODB = None
 
+
+def get_node_msg(event, node):
+  return {
+    'event': event,
+    'node': {
+      'address': node[0],
+      'port': int(node[1])
+    },
+    'ts': datetime.now()
+  }
 
 class Keepalive(object):
     """
@@ -83,12 +95,19 @@ class Keepalive(object):
 
         REDIS_CONN.sadd('opendata', data)
 
+        mongo_msgs = []
         while True:
             if time.time() > self.last_ping + self.keepalive_time:
+                keepalive_msg = get_node_msg('keepalive', self.node)
+                keepalive_msg['last_ping'] = self.last_ping
+                mongo_msgs.append(keepalive_msg)
                 try:
                     self.ping()
                 except socket.error as err:
                     logging.info("ping: Closing %s (%s)", self.node, err)
+                    err_msg = get_node_msg('ping_err', self.node)
+                    err_msg['err'] = err
+                    mongo_msgs.append(err_msg)
                     break
 
                 try:
@@ -96,24 +115,42 @@ class Keepalive(object):
                 except socket.error as err:
                     logging.info(
                         "send_bestblockhash: Closing %s (%s)", self.node, err)
+                    err_msg = get_node_msg('bestblockhash_err', self.node)
+                    err_msg['err'] = err
+                    mongo_msgs.append(err_msg)
                     break
 
                 try:
                     self.send_addr()
                 except socket.error as err:
                     logging.info("send_addr: Closing %s (%s)", self.node, err)
+                    err_msg = get_node_msg('send_addr_err', self.node)
+                    err_msg['err'] = err
+                    mongo_msgs.append(err_msg)
                     break
 
             # Sink received messages to flush them off socket buffer
             try:
-                self.conn.get_messages()
+                msgs = self.conn.get_messages()
+                msgs_mongo_msg = get_node_msg('received_msgs', self.node)
+                msgs_mongo_msg['msgs'] = msgs
+                mongo_msgs.append(msgs_mongo_msg)
             except socket.timeout:
                 pass
             except (ProtocolError, ConnectionError, socket.error) as err:
                 logging.info("get_messages: Closing %s (%s)", self.node, err)
+                err_msg = get_node_msg('get_messages_err', self.node)
+                err_msg['err'] = err
+                mongo_msgs.append(err_msg)
                 break
+
+            if len(mongo_msgs) > 0:
+                MONGODB['ping'].insert_many(mongo_msgs)
+                del mongo_msgs[:]
             gevent.sleep(0.3)
 
+        if len(mongo_msgs) > 0:
+            MONGODB['ping'].insert_many(mongo_msgs)
         REDIS_CONN.srem('opendata', data)
 
     def ping(self):
@@ -215,6 +252,7 @@ def task():
         proxy = CONF['tor_proxy']
 
     handshake_msgs = []
+    mongo_msgs = []
     conn = Connection(node,
                       (CONF['source_address'], 0),
                       magic_number=CONF['magic_number'],
@@ -228,10 +266,18 @@ def task():
                       relay=CONF['relay'])
     try:
         logging.debug("Connecting to %s", conn.to_addr)
+        connecting_msg = get_node_msg('connecting', node)
+        connecting_msg['services'] = services
+        connecting_msg['height'] = height
+        mongo_msgs.append(connecting_msg)
         conn.open()
         handshake_msgs = conn.handshake()
     except (ProtocolError, ConnectionError, socket.error) as err:
         logging.debug("Closing %s (%s)", node, err)
+        err_msg = get_node_msg('connect_exception', node)
+        err_msg['err'] = err
+        mongo_msgs.append(err_msg)
+        MONGODB['ping'].insert_many(mongo_msgs)
         conn.close()
 
     if len(handshake_msgs) == 0:
@@ -239,7 +285,14 @@ def task():
             nodes = REDIS_CONN.decr(cidr_key)
             logging.info("-CIDR %s: %d", cidr, nodes)
         REDIS_CONN.srem('open', node)
+        fail_msg = get_node_msg('handshake_failed', node)
+        mongo_msgs.append(fail_msg)
+        MONGODB['ping'].insert_many(mongo_msgs)
         return
+
+   handshake_mongo_msg = get_node_msg('handshake', node)
+   handshake_mongo_msg['handshake_msgs'] = handshake_msgs
+   mongo_msgs.append(handshake_mongo_msg)
 
     if address.endswith(".onion"):
         # Map local port to .onion node
@@ -247,6 +300,7 @@ def task():
         logging.info("%s: 127.0.0.1:%d", conn.to_addr, local_port)
         REDIS_CONN.set('onion:{}'.format(local_port), conn.to_addr)
 
+    MONGODB['ping'].insert_many(mongo_msgs)
     Keepalive(conn=conn, version_msg=handshake_msgs[0]).keepalive()
     conn.close()
     if cidr_key:
@@ -435,6 +489,9 @@ def main(argv):
     global REDIS_CONN
     REDIS_CONN = new_redis_conn(db=CONF['db'])
 
+    global MONGODB
+    MONGODB = get_db()
+
     if CONF['master']:
         redis_pipe = REDIS_CONN.pipeline()
         logging.info("Removing all keys")
@@ -444,6 +501,12 @@ def main(argv):
         for key in get_keys(REDIS_CONN, 'ping:cidr:*'):
             redis_pipe.delete(key)
         redis_pipe.execute()
+
+        start_event = {
+          "event": "started",
+          "ts": datetime.now()
+        }
+        MONGODB['ping'].insert_one(start_event)
 
     # Initialize a pool of workers (greenlets)
     pool = gevent.pool.Pool(CONF['workers'])
