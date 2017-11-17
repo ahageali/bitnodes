@@ -69,7 +69,8 @@ def enumerate_node(redis_pipe, addr_msgs, now):
     Adds all peering nodes with max. age of 24 hours into the crawl set.
     """
     peers = 0
-
+    mongo_data = []
+    nodes=[]
     for addr_msg in addr_msgs:
         if 'addr_list' in addr_msg:
             for peer in addr_msg['addr_list']:
@@ -85,9 +86,22 @@ def enumerate_node(redis_pipe, addr_msgs, now):
                     if is_excluded(address):
                         logging.debug("Exclude: %s", address)
                         continue
+                    nodes.append({
+                        "address": address,
+                        "port": int(port),
+                        "services": int(services),
+                    })
                     redis_pipe.sadd('pending', (address, port, services))
                     peers += 1
 
+
+    mongo_data.append({
+        "address": address,
+        "nodes":nodes,
+        "ts": now
+    })
+
+    MONGODB['nodelist'].insert_many(mongo_data)
     return peers
 
 
