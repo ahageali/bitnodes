@@ -74,6 +74,7 @@ def filter_msg(msg):
         del msg['magic_number']
     if 'nonce' in msg:
         del msg['nonce']
+    return msg
 
 class Keepalive(object):
     """
