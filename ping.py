@@ -58,14 +58,22 @@ MONGODB = None
 
 
 def get_node_msg(event, node):
-  return {
-    'event': event,
-    'node': {
-      'address': node[0],
-      'port': int(node[1])
-    },
-    'ts': datetime.now()
-  }
+    return {
+        'event': event,
+        'node': {
+            'address': str(node[0]),
+            'port': int(node[1])
+        },
+        'ts': datetime.now()
+    }
+
+def filter_msg(msg):
+    if 'checksum' in msg:
+        del msg['checksum']
+    if 'magic_number' in msg:
+        del msg['magic_number']
+    if 'nonce' in msg:
+        del msg['nonce']
 
 class Keepalive(object):
     """
@@ -132,9 +140,13 @@ class Keepalive(object):
             # Sink received messages to flush them off socket buffer
             try:
                 msgs = self.conn.get_messages()
-                msgs_mongo_msg = get_node_msg('received_msgs', self.node)
-                msgs_mongo_msg['msgs'] = msgs
-                mongo_msgs.append(msgs_mongo_msg)
+                if len(msgs) > 0:
+                    msgs_mongo_msg = get_node_msg('received_msgs', self.node)
+                    filtered_msgs = []
+                    for x in msgs:
+                        filtered_msgs.append(filter_msg(x))
+                    msgs_mongo_msg['msgs'] = filtered_msgs
+                    mongo_msgs.append(msgs_mongo_msg)
             except socket.timeout:
                 pass
             except (ProtocolError, ConnectionError, socket.error) as err:
@@ -145,7 +157,10 @@ class Keepalive(object):
                 break
 
             if len(mongo_msgs) > 0:
-                MONGODB['ping'].insert_many(mongo_msgs)
+                try:
+                    MONGODB['ping'].insert_many(mongo_msgs)
+                except e:
+                    logging.info("Error while attempting to insert: %s (%s)", self.node, e)
                 del mongo_msgs[:]
             gevent.sleep(0.3)
 
@@ -277,7 +292,6 @@ def task():
         err_msg = get_node_msg('connect_exception', node)
         err_msg['err'] = str(err)
         mongo_msgs.append(err_msg)
-        MONGODB['ping'].insert_many(mongo_msgs)
         conn.close()
 
     if len(handshake_msgs) == 0:
@@ -291,7 +305,10 @@ def task():
         return
 
     handshake_mongo_msg = get_node_msg('handshake', node)
-    handshake_mongo_msg['handshake_msgs'] = handshake_msgs
+    filtered_msgs = []
+    for x in handshake_msgs:
+        filtered_msgs.append(filter_msg(x))
+    handshake_mongo_msg['handshake_msgs'] = filtered_msgs
     mongo_msgs.append(handshake_mongo_msg)
 
     if address.endswith(".onion"):
@@ -300,7 +317,10 @@ def task():
         logging.info("%s: 127.0.0.1:%d", conn.to_addr, local_port)
         REDIS_CONN.set('onion:{}'.format(local_port), conn.to_addr)
 
-    MONGODB['ping'].insert_many(mongo_msgs)
+    try:
+        MONGODB['ping'].insert_many(mongo_msgs)
+    except e:
+        logging.info("Error while trying to insert entries: %s (%s)", node, e)
     Keepalive(conn=conn, version_msg=handshake_msgs[0]).keepalive()
     conn.close()
     if cidr_key:
