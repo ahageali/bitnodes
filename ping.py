@@ -107,9 +107,6 @@ class Keepalive(object):
         mongo_msgs = []
         while True:
             if time.time() > self.last_ping + self.keepalive_time:
-                keepalive_msg = get_node_msg('keepalive', self.node)
-                keepalive_msg['last_ping'] = self.last_ping
-                mongo_msgs.append(keepalive_msg)
                 try:
                     self.ping()
                 except socket.error as err:
@@ -140,14 +137,7 @@ class Keepalive(object):
 
             # Sink received messages to flush them off socket buffer
             try:
-                msgs = self.conn.get_messages()
-                if len(msgs) > 0:
-                    msgs_mongo_msg = get_node_msg('received_msgs', self.node)
-                    filtered_msgs = []
-                    for x in msgs:
-                        filtered_msgs.append(filter_msg(x))
-                    msgs_mongo_msg['msgs'] = filtered_msgs
-                    mongo_msgs.append(msgs_mongo_msg)
+                self.conn.get_messages()
             except socket.timeout:
                 pass
             except (ProtocolError, ConnectionError, socket.error) as err:
