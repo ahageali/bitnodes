@@ -103,7 +103,7 @@ def enumerate_node(redis_pipe, addr_msgs, now, host_address, host_port, host_ser
         "ts": now
     })
 
-    MONGODB['nodelist'].insert_many(mongo_data)
+    MONGODB['node_peer_info'].insert_many(mongo_data)
     return peers
 
 
