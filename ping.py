@@ -150,13 +150,16 @@ class Keepalive(object):
             if len(mongo_msgs) > 0:
                 try:
                     MONGODB['ping'].insert_many(mongo_msgs)
-                except e:
+                except Exception as e:
                     logging.info("Error while attempting to insert: %s (%s)", self.node, e)
                 del mongo_msgs[:]
             gevent.sleep(0.3)
 
         if len(mongo_msgs) > 0:
-            MONGODB['ping'].insert_many(mongo_msgs)
+            try:
+                MONGODB['ping'].insert_many(mongo_msgs)
+            except Exception as e:
+                logging.info("Error while attempting to insert: %s (%s)", self.node, e)
         REDIS_CONN.srem('opendata', data)
 
     def ping(self):
@@ -292,7 +295,10 @@ def task():
         REDIS_CONN.srem('open', node)
         fail_msg = get_node_msg('handshake_failed', node)
         mongo_msgs.append(fail_msg)
-        MONGODB['ping'].insert_many(mongo_msgs)
+        try:
+            MONGODB['ping'].insert_many(mongo_msgs)
+        except Exception as e:
+            logging.info("Error while attempting to insert: %s (%s)", node, e)
         return
 
     handshake_mongo_msg = get_node_msg('handshake', node)
@@ -310,8 +316,8 @@ def task():
 
     try:
         MONGODB['ping'].insert_many(mongo_msgs)
-    except e:
-        logging.info("Error while trying to insert entries: %s (%s)", node, e)
+    except Exception as e:
+        logging.info("Error while attempting to insert: %s (%s)", node, e)
     Keepalive(conn=conn, version_msg=handshake_msgs[0]).keepalive()
     conn.close()
     if cidr_key:
