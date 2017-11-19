@@ -86,8 +86,6 @@ class Keepalive(object):
         self.version_msg = version_msg
         self.last_ping = int(time.time())
         self.keepalive_time = 60
-        self.last_getaddr = 0
-        self.getaddr_freq = 600
         self.last_bestblockhash = None
 
     def keepalive(self):
@@ -136,18 +134,6 @@ class Keepalive(object):
                     err_msg['err'] = str(err)
                     mongo_msgs.append(err_msg)
                     break
-            if time.time() > self.last_getaddr + self.getaddr_freq:
-                self.last_getaddr = int(time.time())
-                try:
-                    self.send_getaddr()
-                except socket.error as err:
-                    logging.info("send_getaddr: Closing %s (%s)", self.node, err)
-                    err_msg = get_node_msg('getaddr_err', self.node)
-                    err_msg['err'] = str(err)
-                    mongo_msgs.append(err_msg)
-                    break
-                getaddr_mongo_msg = get_node_msg('sent_getaddr', self.node)
-                mongo_msgs.append(getaddr_mongo_msg)
             # Sink received messages to flush them off socket buffer
             msgs = []
             try:
@@ -169,17 +155,10 @@ class Keepalive(object):
                         # Block found
                         if inv_vector['type'] == 2:
                             blocks_seen.append(inv_vector['hash'])
-                elif msg['command'] == 'addr':
-                    addrs_seen = addrs_seen + msg['addr_list']
             if len(blocks_seen) > 0:
                 block_seen_msg = get_node_msg('blocks_found', self.node)
                 block_seen_msg['blocks_seen'] = blocks_seen
                 mongo_msgs.append(block_seen_msg)
-
-            if len(addrs_seen) > 0:
-                addrs_seen_msg = get_node_msg('addrs_seen', self.node)
-                addrs_seen_msg['addrs'] = addrs_seen
-                mongo_msgs.append(addrs_seen_msg)
 
             if len(mongo_msgs) > 0:
                 try:
